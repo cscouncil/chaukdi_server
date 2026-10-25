@@ -193,6 +193,98 @@ export function setupSocketIO(io) {
                 is_typing: false
             });
         });
+        // 4. Real-time VoIP Call Signaling (Voice & Video Calls)
+        socket.on('start_call', (data) => {
+            const { receiver_id, call_type = 'AUDIO' } = data;
+            console.log(`📞 [Chaukdi Call] ${user.display_name} calling ${receiver_id} (${call_type})`);
+            const receiverSockets = userSocketsMap.get(receiver_id);
+            const callId = 'call_' + uuidv4().substring(0, 10);
+            const startedAt = new Date().toISOString();
+            if (!receiverSockets || receiverSockets.size === 0) {
+                console.log(`⚠️ [Chaukdi Call] Receiver ${receiver_id} is offline`);
+                socket.emit('call_failed', { reason: 'User is currently offline' });
+                // Record Missed Call in SQLite DB
+                db.prepare(`
+          INSERT INTO calls (id, caller_id, receiver_id, call_type, status, duration_seconds, created_at)
+          VALUES (?, ?, ?, ?, 'MISSED', 0, ?)
+        `).run(callId, userId, receiver_id, call_type, startedAt);
+                return;
+            }
+            const callPayload = {
+                call_id: callId,
+                caller_id: userId,
+                caller_name: user.display_name,
+                caller_avatar: user.avatar_url,
+                caller_phone: user.phone_number,
+                call_type,
+                started_at: startedAt
+            };
+            // Notify caller that phone is ringing
+            socket.emit('call_ringing', { call_id: callId, receiver_id });
+            // Forward incoming call to all active sockets of receiver
+            receiverSockets.forEach(sockId => {
+                io.to(sockId).emit('incoming_call', callPayload);
+            });
+        });
+        socket.on('accept_call', (data) => {
+            const { caller_id, call_id } = data;
+            console.log(`✅ [Chaukdi Call] Call ${call_id} accepted by ${user.display_name}`);
+            const callerSockets = userSocketsMap.get(caller_id);
+            if (callerSockets) {
+                callerSockets.forEach(sockId => {
+                    io.to(sockId).emit('call_accepted', {
+                        call_id,
+                        receiver_id: userId,
+                        receiver_name: user.display_name,
+                        receiver_avatar: user.avatar_url
+                    });
+                });
+            }
+        });
+        socket.on('reject_call', (data) => {
+            const { caller_id, call_id, reason = 'declined' } = data;
+            console.log(`❌ [Chaukdi Call] Call ${call_id} rejected by ${user.display_name}`);
+            const callerSockets = userSocketsMap.get(caller_id);
+            if (callerSockets) {
+                callerSockets.forEach(sockId => {
+                    io.to(sockId).emit('call_rejected', { call_id, reason });
+                });
+            }
+            // Record Declined Call in DB
+            const now = new Date().toISOString();
+            db.prepare(`
+        INSERT INTO calls (id, caller_id, receiver_id, call_type, status, duration_seconds, created_at)
+        VALUES (?, ?, ?, 'AUDIO', 'DECLINED', 0, ?)
+      `).run(call_id || ('call_' + uuidv4().substring(0, 10)), caller_id, userId, now);
+        });
+        socket.on('end_call', (data) => {
+            const { target_user_id, call_id, call_type = 'AUDIO', duration_seconds = 0 } = data;
+            console.log(`🛑 [Chaukdi Call] Call ${call_id} ended. Duration: ${duration_seconds}s`);
+            const targetSockets = userSocketsMap.get(target_user_id);
+            if (targetSockets) {
+                targetSockets.forEach(sockId => {
+                    io.to(sockId).emit('call_ended', { call_id, duration_seconds });
+                });
+            }
+            // Record Completed Call in DB
+            const now = new Date().toISOString();
+            db.prepare(`
+        INSERT INTO calls (id, caller_id, receiver_id, call_type, status, duration_seconds, created_at)
+        VALUES (?, ?, ?, ?, 'COMPLETED', ?, ?)
+      `).run(call_id || ('call_' + uuidv4().substring(0, 10)), userId, target_user_id, call_type, duration_seconds, now);
+        });
+        socket.on('webrtc_signal', (data) => {
+            const { target_user_id, signal } = data;
+            const targetSockets = userSocketsMap.get(target_user_id);
+            if (targetSockets) {
+                targetSockets.forEach(sockId => {
+                    io.to(sockId).emit('webrtc_signal', {
+                        sender_id: userId,
+                        signal
+                    });
+                });
+            }
+        });
         // Disconnect Handler
         socket.on('disconnect', () => {
             const userSockets = userSocketsMap.get(userId);
