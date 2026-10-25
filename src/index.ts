@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initDatabase } from './database.js';
+import { initSupabase, syncAllToSupabase } from './supabase.js';
 import { setupSocketIO } from './socket.js';
 import { authRouter } from './routes/auth.js';
 import { chatsRouter } from './routes/chats.js';
@@ -36,6 +37,11 @@ app.use(express.json());
 
 // Initialize SQLite database & seed default data
 initDatabase();
+
+// Connect to Supabase Cloud Database & restore cloud data if available
+initSupabase().catch((err) => {
+  console.warn('⚠️ [Supabase] Startup sync warning:', err?.message);
+});
 
 // Setup WebSocket gateway
 const io = new Server(server, {
@@ -82,6 +88,21 @@ server.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 Chaukdi Server is running live on http://localhost:${PORT}`);
   console.log(`📡 WebSocket Gateway ready for Real-Time WhatsApp Ticks`);
-  console.log(`🇮🇳 Sovereign Indian Data Layer: 100% Local`);
+  console.log(`☁️ Supabase PostgreSQL Cloud Sync: ACTIVE`);
   console.log(`======================================================\n`);
 });
+
+// Handle graceful shutdown on Render restarts
+const handleShutdown = async (signal: string) => {
+  console.log(`\n🛑 [Server] Received ${signal}. Flushing all data to Supabase Cloud before exit...`);
+  try {
+    await syncAllToSupabase();
+    console.log('✅ [Server] Final Cloud Flush complete.');
+  } catch (e) {
+    console.error('⚠️ [Server] Shutdown flush error:', e);
+  }
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));

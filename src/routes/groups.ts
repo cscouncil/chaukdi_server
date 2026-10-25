@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncAllToSupabase } from '../supabase.js';
 import { authenticateToken, AuthRequest } from './auth.js';
 
 export const groupsRouter = Router();
@@ -71,6 +72,7 @@ groupsRouter.post('/', authenticateToken, (req: AuthRequest, res: Response) => {
   });
 
   createGroupTx();
+  syncAllToSupabase().catch(() => {});
 
   res.status(201).json({
     success: true,

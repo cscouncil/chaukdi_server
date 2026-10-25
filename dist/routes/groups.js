@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncAllToSupabase } from '../supabase.js';
 import { authenticateToken } from './auth.js';
 export const groupsRouter = Router();
 // 1. Create a "Chaukdi" Group / Squad
@@ -47,6 +48,7 @@ groupsRouter.post('/', authenticateToken, (req, res) => {
     `).run(uuidv4(), chatId, creatorId, `🎉 ${req.user.display_name} ne nai Chaukdi "${name.trim()}" banayi hai. Aao, baithak shuru karein!`, now);
     });
     createGroupTx();
+    syncAllToSupabase().catch(() => { });
     res.status(201).json({
         success: true,
         group_id: groupId,

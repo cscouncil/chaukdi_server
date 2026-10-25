@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncUpsert } from '../supabase.js';
 import { authenticateToken, AuthRequest } from './auth.js';
 
 export const callsRouter = Router();
@@ -40,6 +41,16 @@ callsRouter.post('/', authenticateToken, (req: AuthRequest, res: Response) => {
     INSERT INTO calls (id, caller_id, receiver_id, call_type, status, duration_seconds, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(callId, callerId, receiver_id, call_type, status, duration_seconds, now);
+
+  syncUpsert('calls', {
+    id: callId,
+    caller_id: callerId,
+    receiver_id: receiver_id,
+    call_type: call_type,
+    status: status,
+    duration_seconds: duration_seconds,
+    created_at: now
+  });
 
   res.status(201).json({ success: true, call_id: callId });
 });

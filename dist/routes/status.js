@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncUpsert } from '../supabase.js';
 import { authenticateToken } from './auth.js';
 export const statusRouter = Router();
 // 1. Get All Active Status Updates (within 24 hours)
@@ -36,6 +37,14 @@ statusRouter.post('/', authenticateToken, (req, res) => {
     INSERT INTO statuses (id, user_id, content, media_url, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(statusId, userId, content || '', media_url || null, now.toISOString(), expiresAt);
+    syncUpsert('statuses', {
+        id: statusId,
+        user_id: userId,
+        content: content || '',
+        media_url: media_url || null,
+        created_at: now.toISOString(),
+        expires_at: expiresAt
+    });
     const newStatus = db.prepare(`
     SELECT s.*, u.display_name, u.avatar_url, u.username
     FROM statuses s

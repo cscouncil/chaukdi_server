@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncUpsert } from '../supabase.js';
 import { authenticateToken, AuthRequest } from './auth.js';
 import { Chat, Message, User } from '../types.js';
 
@@ -140,6 +141,10 @@ chatsRouter.post('/direct', authenticateToken, (req: AuthRequest, res: Response)
   });
 
   insertChat();
+
+  syncUpsert('chats', { id: newChatId, type: 'DIRECT', created_at: now, last_message_at: now });
+  syncUpsert('chat_participants', { id: uuidv4(), chat_id: newChatId, user_id: currentUserId, joined_at: now });
+  syncUpsert('chat_participants', { id: uuidv4(), chat_id: newChatId, user_id: target_user_id, joined_at: now });
 
   res.status(201).json({
     chat_id: newChatId,

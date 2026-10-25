@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncUpsert, syncDelete } from '../supabase.js';
 import { User } from '../types.js';
 
 export const authRouter = Router();
@@ -223,6 +224,7 @@ authRouter.post('/otp/verify', (req: Request, res: Response) => {
     );
 
     user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
+    syncUpsert('users', user);
   } else {
     // If user's display name is default, treat as needing profile setup
     if (user.display_name === 'Chaukdi Member') {
@@ -302,6 +304,7 @@ authRouter.put('/profile', authenticateToken, (req: AuthRequest, res: Response) 
   );
 
   const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (updatedUser) syncUpsert('users', updatedUser as any);
   res.json({ success: true, user: updatedUser });
 });
 

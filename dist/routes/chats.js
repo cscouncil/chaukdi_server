@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncUpsert } from '../supabase.js';
 import { authenticateToken } from './auth.js';
 export const chatsRouter = Router();
 // 1. Get All Active Chats for the Logged-in User
@@ -116,6 +117,9 @@ chatsRouter.post('/direct', authenticateToken, (req, res) => {
         db.prepare('INSERT INTO chat_participants (id, chat_id, user_id) VALUES (?, ?, ?)').run(uuidv4(), newChatId, target_user_id);
     });
     insertChat();
+    syncUpsert('chats', { id: newChatId, type: 'DIRECT', created_at: now, last_message_at: now });
+    syncUpsert('chat_participants', { id: uuidv4(), chat_id: newChatId, user_id: currentUserId, joined_at: now });
+    syncUpsert('chat_participants', { id: uuidv4(), chat_id: newChatId, user_id: target_user_id, joined_at: now });
     res.status(201).json({
         chat_id: newChatId,
         target_user: targetUser

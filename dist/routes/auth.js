@@ -2,6 +2,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncUpsert } from '../supabase.js';
 export const authRouter = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'chaukdi_sovereign_secret_key_2026';
 // Authentication Middleware
@@ -170,6 +171,7 @@ authRouter.post('/otp/verify', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, 'USER')
     `).run(userId, phone_number, generatedUsername, 'Chaukdi Member', `https://api.dicebear.com/7.x/identicon/svg?seed=${userId}`, 'Chaukdi pe baatcheet jari hai.');
         user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+        syncUpsert('users', user);
     }
     else {
         // If user's display name is default, treat as needing profile setup
@@ -213,6 +215,8 @@ authRouter.put('/profile', authenticateToken, (req, res) => {
     WHERE id = ?
   `).run(display_name ?? null, username ?? null, about ?? null, avatar_url ?? null, cover_photo_url ?? null, category ?? null, business_hours ?? null, address ?? null, website ?? null, instagram ?? null, facebook ?? null, email ?? null, upi_qr ?? null, catalog ?? null, userId);
     const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    if (updatedUser)
+        syncUpsert('users', updatedUser);
     res.json({ success: true, user: updatedUser });
 });
 // 5. Starred Messages

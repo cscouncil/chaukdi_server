@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
+import { syncUpsert } from '../supabase.js';
 import { authenticateToken, AuthRequest } from './auth.js';
 
 export const statusRouter = Router();
@@ -52,6 +53,15 @@ statusRouter.post('/', authenticateToken, (req: AuthRequest, res: Response) => {
     now.toISOString(),
     expiresAt
   );
+
+  syncUpsert('statuses', {
+    id: statusId,
+    user_id: userId,
+    content: content || '',
+    media_url: media_url || null,
+    created_at: now.toISOString(),
+    expires_at: expiresAt
+  });
 
   const newStatus = db.prepare(`
     SELECT s.*, u.display_name, u.avatar_url, u.username

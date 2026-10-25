@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from './database.js';
+import { syncUpsert } from './supabase.js';
 import { Message, SendMessagePayload, User } from './types.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'chaukdi_sovereign_secret_key_2026';
@@ -46,6 +47,7 @@ export function setupSocketIO(io: Server) {
     // Update user online status in DB
     const now = new Date().toISOString();
     db.prepare('UPDATE users SET is_online = 1, last_seen = ? WHERE id = ?').run(now, userId);
+    syncUpsert('users', { id: userId, is_online: 1, last_seen: now });
 
     // Broadcast online status to all connected users
     io.emit('user_presence', {
@@ -91,6 +93,20 @@ export function setupSocketIO(io: Server) {
 
       // Update chat last_message_at
       db.prepare('UPDATE chats SET last_message_at = ? WHERE id = ?').run(sentAt, chat_id);
+
+      // Realtime Cloud Persistence
+      syncUpsert('messages', {
+        id: messageId,
+        chat_id,
+        sender_id: userId,
+        content,
+        media_type,
+        media_url,
+        status: initialStatus,
+        sent_at: sentAt,
+        delivered_at: deliveredAt
+      });
+      syncUpsert('chats', { id: chat_id, last_message_at: sentAt });
 
       const messageData: Message = {
         id: messageId,
@@ -149,6 +165,17 @@ export function setupSocketIO(io: Server) {
             `).run(aiMsgId, chat_id, replyText, aiSentAt, aiSentAt);
 
             db.prepare('UPDATE chats SET last_message_at = ? WHERE id = ?').run(aiSentAt, chat_id);
+
+            syncUpsert('messages', {
+              id: aiMsgId,
+              chat_id,
+              sender_id: 'u_chaukdi_ai',
+              content: replyText,
+              status: 'DELIVERED',
+              sent_at: aiSentAt,
+              delivered_at: aiSentAt
+            });
+            syncUpsert('chats', { id: chat_id, last_message_at: aiSentAt });
 
             socket.emit('user_typing', {
               chat_id,
@@ -246,6 +273,15 @@ export function setupSocketIO(io: Server) {
           INSERT INTO calls (id, caller_id, receiver_id, call_type, status, duration_seconds, created_at)
           VALUES (?, ?, ?, ?, 'MISSED', 0, ?)
         `).run(callId, userId, receiver_id, call_type, startedAt);
+        syncUpsert('calls', {
+          id: callId,
+          caller_id: userId,
+          receiver_id,
+          call_type,
+          status: 'MISSED',
+          duration_seconds: 0,
+          created_at: startedAt
+        });
         return;
       }
 
@@ -298,10 +334,20 @@ export function setupSocketIO(io: Server) {
 
       // Record Declined Call in DB
       const now = new Date().toISOString();
+      const recordedCallId = call_id || ('call_' + uuidv4().substring(0, 10));
       db.prepare(`
         INSERT INTO calls (id, caller_id, receiver_id, call_type, status, duration_seconds, created_at)
         VALUES (?, ?, ?, 'AUDIO', 'DECLINED', 0, ?)
-      `).run(call_id || ('call_' + uuidv4().substring(0, 10)), caller_id, userId, now);
+      `).run(recordedCallId, caller_id, userId, now);
+      syncUpsert('calls', {
+        id: recordedCallId,
+        caller_id,
+        receiver_id: userId,
+        call_type: 'AUDIO',
+        status: 'DECLINED',
+        duration_seconds: 0,
+        created_at: now
+      });
     });
 
     socket.on('end_call', (data: { target_user_id: string; call_id: string; call_type?: string; duration_seconds?: number }) => {
@@ -317,10 +363,20 @@ export function setupSocketIO(io: Server) {
 
       // Record Completed Call in DB
       const now = new Date().toISOString();
+      const endCallId = call_id || ('call_' + uuidv4().substring(0, 10));
       db.prepare(`
         INSERT INTO calls (id, caller_id, receiver_id, call_type, status, duration_seconds, created_at)
         VALUES (?, ?, ?, ?, 'COMPLETED', ?, ?)
-      `).run(call_id || ('call_' + uuidv4().substring(0, 10)), userId, target_user_id, call_type, duration_seconds, now);
+      `).run(endCallId, userId, target_user_id, call_type, duration_seconds, now);
+      syncUpsert('calls', {
+        id: endCallId,
+        caller_id: userId,
+        receiver_id: target_user_id,
+        call_type,
+        status: 'COMPLETED',
+        duration_seconds,
+        created_at: now
+      });
     });
 
     socket.on('webrtc_signal', (data: { target_user_id: string; signal: any }) => {
@@ -347,6 +403,7 @@ export function setupSocketIO(io: Server) {
           // Mark offline in DB
           const offlineTime = new Date().toISOString();
           db.prepare('UPDATE users SET is_online = 0, last_seen = ? WHERE id = ?').run(offlineTime, userId);
+          syncUpsert('users', { id: userId, is_online: 0, last_seen: offlineTime });
 
           io.emit('user_presence', {
             user_id: userId,
