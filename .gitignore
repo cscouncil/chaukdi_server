@@ -1,6 +1,5 @@
 node_modules/
 .env
-public/*.apk
 *.db-shm
 *.db-wal
 *.log
