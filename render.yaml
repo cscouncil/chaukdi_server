@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: chaukdi-server
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: FAST2SMS_API_KEY
+        value: KJwZDEdZQwEbA9sRqVYmQ0nmLEYP0xi6O4AoMZweaOvxoO3M29wBck39iSURibNCtS3i6MZqbLvgXi1s
+      - key: JWT_SECRET
+        value: chaukdi_sovereign_secret_key_2026
